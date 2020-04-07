@@ -2,29 +2,27 @@ CMAKE_MINIMUM_REQUIRED (VERSION 3.17)
 
 PROJECT (PMT)
 
+FIND_PACKAGE (spdlog REQUIRED)
+
 INCLUDE (FindPkgConfig)
 
 PKG_SEARCH_MODULE (SDL2 REQUIRED sdl2)
-PKG_SEARCH_MODULE (SDL2_MIXER REQUIRED SDL2_mixer)
 
 INCLUDE_DIRECTORIES (
     pmt
     ${SDL2_INCLUDE_DIRS}
-    ${SDL2_MIXER_INCLUDE_DIRS}
 )
 
 ADD_EXECUTABLE (
     pmt
-    ./src/main.c
-    ./src/generate.c
+    ./src/main.cpp
+    ./src/sdl2.cpp
 )
 
-SET_PROPERTY(TARGET pmt PROPERTY C_STANDARD 11)
+SET_PROPERTY(TARGET pmt PROPERTY CXX_STANDARD 17)
 
 TARGET_LINK_LIBRARIES (
     pmt
-    asound
-    m
     ${SDL2_LIBRARIES}
-    ${SDL2_MIXER_LIBRARIES}
+    spdlog::spdlog
 )
