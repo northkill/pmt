@@ -16,6 +16,7 @@ INCLUDE_DIRECTORIES (
 ADD_EXECUTABLE (
     pmt
     ./src/main.c
+    ./src/generate.c
 )
 
 SET_PROPERTY(TARGET pmt PROPERTY C_STANDARD 11)
@@ -23,6 +24,7 @@ SET_PROPERTY(TARGET pmt PROPERTY C_STANDARD 11)
 TARGET_LINK_LIBRARIES (
     pmt
     asound
+    m
     ${SDL2_LIBRARIES}
     ${SDL2_MIXER_LIBRARIES}
 )

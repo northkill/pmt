@@ -2,19 +2,24 @@
 
 #include <stdbool.h>
 #include <stdio.h>
-#include <stdlib.h>
+#include <math.h>
 
 #include <alsa/asoundlib.h>
 
 #include <SDL2/SDL.h>
 
+#include "./generate.h"
+
 #define TEST_WAV_PATH "/home/asdf/project/pmt/test.wav"
+#define AUDIO_DEVICE_FREQ 48000
+#define AUDIO_DEVICE_FORMAT AUDIO_F32
+#define AUDIO_DEVICE_CHANNELS 2
 
 typedef struct {
 	SDL_AudioDeviceID audio_device;
 	struct {
+		bool converted;
 		Uint8 *buffer;
-		SDL_AudioSpec spec;
 		Uint32 len;
 	} test_wav;
 } PMTContext;
@@ -56,16 +61,16 @@ static char const* select_audio_device() {
 	return SDL_GetAudioDeviceName(index, 0);
 }
 
-static bool init_audio_device(PMTContext *const context, const char* const audio_device_name) {
+static bool init_audio_device(PMTContext *const context) {
 	SDL_AudioSpec want;
 	SDL_memset(&want, 0, sizeof(want));
-	want.freq = 48000;
-	want.format = AUDIO_F32;
-	want.channels = 2;
+	want.freq = AUDIO_DEVICE_FREQ;
+	want.format = AUDIO_DEVICE_FORMAT;
+	want.channels = AUDIO_DEVICE_CHANNELS;
 	want.samples = 4096;
 	want.callback = NULL;
 
-	context->audio_device = SDL_OpenAudioDevice(audio_device_name, 0, &want, NULL, SDL_AUDIO_ALLOW_ANY_CHANGE);
+	context->audio_device = SDL_OpenAudioDevice(NULL, 0, &want, NULL, 0);
 	if (g_context.audio_device == 0) {
 		fprintf(stderr, "failed to open audio device: %s\n", SDL_GetError());
 		return false;
@@ -76,17 +81,52 @@ static bool init_audio_device(PMTContext *const context, const char* const audio
 }
 
 static bool init_test_wav(PMTContext *const context, char const *const path) {
-	Uint32 wav_length = 0;
-	bool result = SDL_LoadWAV(
+	SDL_AudioSpec spec;
+	SDL_memset(&spec, 0, sizeof(spec));
+	bool loaded = SDL_LoadWAV(
 			path,
-			&context->test_wav.spec,
+			&spec,
 			&context->test_wav.buffer,
-			&wav_length) != NULL;
-	if (!result) {
+			&context->test_wav.len) != NULL;
+	if (!loaded) {
 		fprintf(stderr, "failed to open test wav file: %s\n", SDL_GetError());
 		return false;
 	}
 	fprintf(stdout, "loaded test wav file\n");
+
+	SDL_AudioCVT cvt;
+	int wavStatus = SDL_BuildAudioCVT(
+			&cvt,
+			spec.format,
+			spec.channels,
+			spec.freq,
+			AUDIO_DEVICE_FORMAT,
+			AUDIO_DEVICE_CHANNELS,
+			AUDIO_DEVICE_FREQ);
+	if (wavStatus == 0) {
+		g_context.test_wav.converted = false;
+		fprintf(stdout, "wav conversion is not needed\n");
+		return true;
+	} else if (wavStatus == -1) {
+		fprintf(stderr, "failed to build wav conversion data: %s\n", SDL_GetError());
+		return false;
+	}
+	fprintf(stdout, "wav conversion is needed\n");
+
+	cvt.len = g_context.test_wav.len;
+	size_t const buffer_size = cvt.len * cvt.len_mult;
+	cvt.buf = SDL_malloc(buffer_size);
+	SDL_memcpy(cvt.buf, g_context.test_wav.buffer, g_context.test_wav.len);
+	if (SDL_ConvertAudio(&cvt) != 0) {
+		fprintf(stderr, "failed to convert wav: %s\n", SDL_GetError());
+		return false;
+	}
+
+	SDL_FreeWAV(g_context.test_wav.buffer);
+	g_context.test_wav.buffer = cvt.buf;
+	g_context.test_wav.len = buffer_size;
+	g_context.test_wav.converted = true;
+	fprintf(stdout, "converted wav\n");
 	return true;
 }
 
@@ -103,12 +143,7 @@ static bool init() {
 	if (!init_sdl())
 		return false;
 
-	list_audio_device();
-	for (int i = 0; i < SDL_GetNumAudioDrivers(); i += 1)
-		fprintf(stdout, "audio driver %d: %s\n", i, SDL_GetAudioDriver(i));
-	char const* const audio_device_name = select_audio_device();
-
-	if (!init_audio_device(&g_context, audio_device_name))
+	if (!init_audio_device(&g_context))
 		return false;
 
 	if (!init_test_wav(&g_context, TEST_WAV_PATH))
@@ -120,10 +155,12 @@ static bool init() {
 
 static void quit() {
 	if (g_context.test_wav.buffer != NULL) {
-		SDL_FreeWAV(g_context.test_wav.buffer);
+		if (g_context.test_wav.converted)
+			SDL_free(g_context.test_wav.buffer);
+		else
+			SDL_FreeWAV(g_context.test_wav.buffer);
 		g_context.test_wav.buffer = NULL;
 		g_context.test_wav.len = 0;
-		SDL_memset(&g_context.test_wav.spec, 0, sizeof(g_context.test_wav.spec));
 		fprintf(stdout, "freed test wav\n");
 	}
 
@@ -141,6 +178,14 @@ static void quit() {
 	fprintf(stdout, "program quitted\n");
 }
 
+static float squ(double x) {
+	if (x > 2 * M_PI)
+		x = atan2(sin(x), cos(x));
+	if (x < 0)
+		return 0;
+	return 1;
+}
+
 int main(int argc, char const *argv[]) {
 	if (!init()) {
 		fprintf(stderr, "failed to initialize\n");
@@ -149,20 +194,36 @@ int main(int argc, char const *argv[]) {
 	}
 	atexit(quit);
 
-	list_audio_device();
+	SDL_PauseAudioDevice(g_context.audio_device, 1);
 
-	int const queue_result = SDL_QueueAudio(
+	size_t const sampleRate = AUDIO_DEVICE_FREQ;
+	size_t const duration = 4;
+	size_t const channels = 2;
+	double const freq = 440.0;
+	struct wave* wave = newWave(channels * sampleRate * duration);
+
+	for (int i = 0; i < sampleRate * duration; i += 1) {
+		float const sample = squ((double)2 * M_PI * 440 / sampleRate * i);
+		add_sample(wave, sample);
+		add_sample(wave, sample);
+	}
+
+	bool const queued = SDL_QueueAudio(
 			g_context.audio_device,
-			g_context.test_wav.buffer,
-			g_context.test_wav.len);
-	if (queue_result != 0) {
+			wave->samples,
+			wave->size * sizeof(*wave->samples)) == 0;
+	if (!queued) {
 		fprintf(stderr, "failed to queue audio: %s\n", SDL_GetError());
 		return EXIT_FAILURE;
 	}
 
+	fprintf(stdout, "start\n");
 	SDL_PauseAudioDevice(g_context.audio_device, 0);
-	SDL_Delay(5000);
-	SDL_PauseAudioDevice(g_context.audio_device, 1);
+	SDL_Delay((duration + 1) * 1000);
+	fprintf(stdout, "stop\n");
+
+	deleteWave(wave);
+	wave = NULL;
 
 	return EXIT_SUCCESS;
 }
