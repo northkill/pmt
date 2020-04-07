@@ -17,6 +17,14 @@ auto constexpr DEVICE_SAMPLES = 8192;
 
 }
 
+auto squ(float x) -> float {
+    if (x > 2.0 * M_PI)
+        x = atan2(sin(x), cos(x));
+    if (x < 0)
+        return 0;
+    return 1;
+}
+
 auto main(void) -> int
 {
     spdlog::set_level(spdlog::level::debug);
@@ -39,15 +47,28 @@ auto main(void) -> int
     }
 
     auto constexpr duration = 4000;
-    std::vector< float > samples(duration / 1000 * DEVICE_CHANNELS * DEVICE_FREQUENCY);
-    for (auto i = 0; i < samples.size() / 2; i += 1) {
+    std::vector< float > samples_sine(duration / 1000 * DEVICE_CHANNELS * DEVICE_FREQUENCY);
+    for (auto i = 0; i < samples_sine.size() / 2; i += 1) {
         float const sample = sin(2 * 440 * (float)M_PI / DEVICE_FREQUENCY * i);
-        samples[i * 2 + 0] = sample;
-        samples[i * 2 + 1] = sample;
+        samples_sine[i * 2 + 0] = sample;
+        samples_sine[i * 2 + 1] = sample;
     }
 
+    std::vector< float > samples_square(duration / 1000 * DEVICE_CHANNELS * DEVICE_FREQUENCY);
+    for (auto i = 0; i < samples_square.size() / 2; i += 1) {
+        float const sample = squ(2 * 440 * (float)M_PI / DEVICE_FREQUENCY * i);
+        samples_square[i * 2 + 0] = sample;
+        samples_square[i * 2 + 1] = sample;
+    }
+
+    std::vector< float > samples_sum(samples_sine.size());
+    for (auto i = 0; i < samples_sum.size(); i += 1)
+        samples_sum[i] = samples_sine[i] + samples_square[i];
+
     audio_device->pause();
-    audio_device->queue(samples);
+    audio_device->queue(samples_sine);
+    audio_device->queue(samples_square);
+    audio_device->queue(samples_sum);
     audio_device->unpause();
-    SDL_Delay(duration);
+    SDL_Delay(duration * 3);
 }

@@ -8,8 +8,6 @@ extern "C" {
 #include <memory>
 #include <iterator>
 
-#include "./wave.h"
-
 namespace nk {
 
 class SDL2 {
