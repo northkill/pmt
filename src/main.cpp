@@ -1,6 +1,7 @@
 #include <cmath>
 
 #include <exception>
+#include <functional>
 #include <vector>
 
 #include <spdlog/spdlog.h>
@@ -25,6 +26,44 @@ auto squ(float x) -> float {
     return 1;
 }
 
+auto gen_sine_sample(float const freq, float const sample_rate, float const x) -> float
+{
+    return sin(2 * freq * M_PI / sample_rate * x);
+}
+
+auto between(float const x, float const a, float const b) -> bool {
+    return x > a and x < b;
+}
+
+template <unsigned int F1, unsigned int F2, unsigned int T = 100>
+auto get_formant_coef(float const freq) -> float {
+    if (between(freq, F1 - T, F1 + T))
+        return 1.0;
+    else if (between(freq, F2 - T, F2 + T))
+        return 0.9;
+    return 0.3;
+}
+
+auto const get_formant_coef_i = std::function (get_formant_coef< 240, 2400 >);
+auto const get_formant_coef_ae = std::function (get_formant_coef< 585, 1710 >);
+auto const get_formant_coef_e = std::function (get_formant_coef< 390, 2300 >);
+auto const get_formant_coef_3 = std::function (get_formant_coef< 610, 1900 >);
+auto const get_formant_coef_u = std::function (get_formant_coef< 250, 595 >);
+
+auto gen_harmonics_sample(
+        float const freq,
+        float const x,
+        std::function<float(float const)> const get_formant_coef,
+        unsigned int const i = 1)
+    -> float
+{
+    float const target_freq = freq * i;
+    if (target_freq > 4200)
+        return 0;
+    return 2.0 * get_formant_coef(target_freq) * gen_sine_sample(target_freq, DEVICE_FREQUENCY, x)
+        + gen_harmonics_sample(freq, x, get_formant_coef, i + 1);
+}
+
 auto main(void) -> int
 {
     spdlog::set_level(spdlog::level::debug);
@@ -47,28 +86,40 @@ auto main(void) -> int
     }
 
     auto constexpr duration = 4000;
-    std::vector< float > samples_sine(duration / 1000 * DEVICE_CHANNELS * DEVICE_FREQUENCY);
-    for (auto i = 0; i < samples_sine.size() / 2; i += 1) {
-        float const sample = sin(2 * 440 * (float)M_PI / DEVICE_FREQUENCY * i);
-        samples_sine[i * 2 + 0] = sample;
-        samples_sine[i * 2 + 1] = sample;
+
+    std::vector< float > samples1(duration / 1000 * DEVICE_CHANNELS * DEVICE_FREQUENCY);
+    for (auto i = 0; i < samples1.size() / 2; i += 1) {
+        float const sample = 0.01 * gen_harmonics_sample(120, i, get_formant_coef_i);
+        samples1[i * 2 + 0] = sample;
+        samples1[i * 2 + 1] = sample;
     }
 
-    std::vector< float > samples_square(duration / 1000 * DEVICE_CHANNELS * DEVICE_FREQUENCY);
-    for (auto i = 0; i < samples_square.size() / 2; i += 1) {
-        float const sample = squ(2 * 440 * (float)M_PI / DEVICE_FREQUENCY * i);
-        samples_square[i * 2 + 0] = sample;
-        samples_square[i * 2 + 1] = sample;
+    std::vector< float > samples2(duration / 1000 * DEVICE_CHANNELS * DEVICE_FREQUENCY);
+    for (auto i = 0; i < samples2.size() / 2; i += 1) {
+        float const sample = 0.01 * gen_harmonics_sample(120, i, get_formant_coef_ae);
+        samples2[i * 2 + 0] = sample;
+        samples2[i * 2 + 1] = sample;
     }
 
-    std::vector< float > samples_sum(samples_sine.size());
-    for (auto i = 0; i < samples_sum.size(); i += 1)
-        samples_sum[i] = samples_sine[i] + samples_square[i];
+    std::vector< float > samples3(duration / 1000 * DEVICE_CHANNELS * DEVICE_FREQUENCY);
+    for (auto i = 0; i < samples3.size() / 2; i += 1) {
+        float const sample = 0.01 * gen_harmonics_sample(120, i, get_formant_coef_u);
+        samples3[i * 2 + 0] = sample;
+        samples3[i * 2 + 1] = sample;
+    }
+
+    std::vector< float > samples4(duration / 1000 * DEVICE_CHANNELS * DEVICE_FREQUENCY);
+    for (auto i = 0; i < samples4.size() / 2; i += 1) {
+        float const sample = 0.01 * gen_harmonics_sample(120, i, get_formant_coef_3);
+        samples4[i * 2 + 0] = sample;
+        samples4[i * 2 + 1] = sample;
+    }
 
     audio_device->pause();
-    audio_device->queue(samples_sine);
-    audio_device->queue(samples_square);
-    audio_device->queue(samples_sum);
+    audio_device->queue(samples1);
+    audio_device->queue(samples2);
+    audio_device->queue(samples3);
+    audio_device->queue(samples4);
     audio_device->unpause();
-    SDL_Delay(duration * 3);
+    SDL_Delay(duration * 4);
 }
