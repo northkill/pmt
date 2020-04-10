@@ -54,6 +54,54 @@ private:
 
 using SDL2AudioDevice_uptr = std::unique_ptr< SDL2AudioDevice >;
 
+class SDL2Window {
+public:
+    SDL2Window(
+            const char* title,
+            int const x,
+            int const y,
+            int const w,
+            int const h);
+    ~SDL2Window(void);
+    SDL2Window(SDL2Window const& other) = delete;
+    SDL2Window& operator = (SDL2Window const& other) = delete;
+
+    constexpr operator SDL_Window* (void) noexcept { return m_window; }
+    constexpr operator SDL_Window* (void) const noexcept { return m_window; } 
+
+    auto show(void) noexcept -> void;
+    auto hide(void) noexcept -> void;
+
+private:
+    SDL_Window* m_window;
+};
+
+using SDL2Window_uptr = std::unique_ptr< SDL2Window >;
+
+class SDL2GLContext {
+public:
+    SDL2GLContext(SDL2Window_uptr& window);
+    ~SDL2GLContext(void);
+    SDL2GLContext(SDL2GLContext const& other) = delete;
+    SDL2GLContext& operator = (SDL2GLContext const& other) = delete;
+
+private:
+    SDL_GLContext m_context;
+};
+
+using SDL2GLContext_uptr = std::unique_ptr< SDL2GLContext >;
+
+class SDL2UserEvent {
+public:
+    SDL2UserEvent(SDL2_uptr const& sdl2);
+    constexpr auto get_type(void) noexcept -> Uint32 { return m_id; }
+
+private:
+    Uint32 const m_id;
+};
+
+using SDL2UserEvent_uptr = std::unique_ptr< SDL2UserEvent >;
+
 };
 
 #endif
