@@ -69,8 +69,6 @@ auto main(void) -> int
     nk::SDL2Window_uptr window;
     nk::SDL2GLContext_uptr gl;
 
-    nk::SDL2UserEvent_uptr timer_end_event;
-
     try {
         sdl2.reset(new nk::SDL2);
         audio_device.reset(
@@ -88,29 +86,78 @@ auto main(void) -> int
                         1280,
                         768));
         gl.reset(new nk::SDL2GLContext(window));
-        timer_end_event.reset(new nk::SDL2UserEvent(sdl2));
     } catch (std::exception const& error) {
         spdlog::error("program failed to initialize: {}", error.what());
         return EXIT_FAILURE;
     }
 
-    auto constexpr duration = 1000;
-    auto const timer_end_event_type = timer_end_event->get_type();
-    SDL_AddTimer(duration, emit_end_timer_event, reinterpret_cast< void* >(timer_end_event_type));
+    auto constexpr duration = 1;
+    auto constexpr sample_number = duration * DEVICE_FREQUENCY * DEVICE_CHANNELS;
+
+    std::array< std::vector< float >, 3 > samples;
+    for (unsigned int i = 0; i < samples.size(); i += 1) {
+        samples[i].reserve(sample_number);
+        for (unsigned int j = 0; j < sample_number / 2; j += 1) {
+            samples[i].emplace_back(gen_sine_sample(440.0f * (i + 1), DEVICE_FREQUENCY, j));
+            samples[i].emplace_back(gen_sine_sample(440.0f * (i + 1), DEVICE_FREQUENCY, j));
+        }
+    }
 
     window->show();
+    audio_device->unpause();
 
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-
     bool running = true;
     while (running) {
         SDL_Event event = { 0, };
         if (SDL_PollEvent(&event)) {
             switch (event.type) {
-            case SDL_USEREVENT:
-                if (event.user.type == timer_end_event_type) {
-                    spdlog::debug("end timer event dispatched");
+            case SDL_QUIT:
+                running = false;
+                break;
+
+            case SDL_KEYDOWN:
+                if (event.key.repeat != 0)
+                    break;
+                switch (event.key.keysym.scancode) {
+                case SDL_SCANCODE_Z:
+                    spdlog::debug("z");
+                    audio_device->queue(samples[0]);
+                    break;
+
+                case SDL_SCANCODE_X:
+                    spdlog::debug("x");
+                    audio_device->queue(samples[1]);
+                    break;
+
+                case SDL_SCANCODE_C:
+                    spdlog::debug("c");
+                    audio_device->queue(samples[2]);
+                    break;
+
+                default:
+                    break;
+                }
+                break;
+
+            case SDL_KEYUP:
+                switch (event.key.keysym.scancode) {
+                case SDL_SCANCODE_Q:
+                    spdlog::debug("SDL keyup q event dispatched");
                     running = false;
+                    break;
+
+                case SDL_SCANCODE_Z:
+                    break;
+
+                case SDL_SCANCODE_X:
+                    break;
+
+                case SDL_SCANCODE_C:
+                    break;
+
+                default:
+                    break;
                 }
                 break;
             }
@@ -120,5 +167,6 @@ auto main(void) -> int
         SDL_GL_SwapWindow(*window);
     }
 
+    audio_device->pause();
     window->hide();
 }
